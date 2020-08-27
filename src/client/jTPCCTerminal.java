@@ -50,15 +50,22 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
     jTPCCConnection     db = null;
     int                 dbType = 0;
 
+    String database;
+    Properties dbProps;
     public jTPCCTerminal
       (String terminalName, int terminalWarehouseID, int terminalDistrictID,
-       Connection conn, int dbType,
+       String database, Properties dbProps, int dbType,
        int numTransactions, boolean terminalWarehouseFixed,
        boolean useStoredProcedures,
        double paymentWeight, double orderStatusWeight,
        double deliveryWeight, double stockLevelWeight,
        int numWarehouses, int limPerMin_Terminal, jTPCC parent) throws SQLException
     {
+	conn = DriverManager.getConnection(database, dbProps);
+	conn.setAutoCommit(false);
+
+	this.database = database;
+	this.dbProps = dbProps;
 	this.terminalName = terminalName;
 	this.conn = conn;
 	this.dbType = dbType;
@@ -93,7 +100,11 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 
     public void run()
     {
-	executeTransactions(numTransactions);
+	try {
+		executeTransactions(numTransactions);
+	} catch (InterruptedException e) {
+		e.printStackTrace();
+	}
 	try
 	{
 	    printMessage("");
@@ -123,7 +134,7 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 	printMessage("Finishing current transaction before exit...");
     }
 
-    private void executeTransactions(int numTransactions)
+    private void executeTransactions(int numTransactions) throws InterruptedException
     {
 	boolean stopRunning = false;
 
@@ -155,6 +166,8 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 	    if(!terminalWarehouseFixed)
 		terminalWarehouseID = rnd.nextInt(1, numWarehouses);
 
+		boolean success = false;
+
 	    if(transactionType <= paymentWeight)
 	    {
 		jTPCCTData      term = new jTPCCTData();
@@ -163,6 +176,7 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		term.setDistrict(terminalDistrictID);
 		term.setUseStoredProcedures(useStoredProcedures);
 		term.setDBType(dbType);
+		while (!success) {
 		try
 		{
 		    term.generatePayment(log, rnd, 0);
@@ -170,12 +184,12 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		    term.execute(log, db);
 		    parent.resultAppend(term);
 		    term.traceScreen(log);
+			success = true;
 		}
 		catch (Exception e)
 		{
-		    log.fatal(e.getMessage());
-		    e.printStackTrace();
-		    System.exit(4);
+			reconnect();
+		}
 		}
 		transactionTypeName = "Payment";
 	    }
@@ -187,6 +201,7 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		term.setDistrict(terminalDistrictID);
 		term.setUseStoredProcedures(useStoredProcedures);
 		term.setDBType(dbType);
+		while (!success) {
 		try
 		{
 		    term.generateStockLevel(log, rnd, 0);
@@ -194,12 +209,12 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		    term.execute(log, db);
 		    parent.resultAppend(term);
 		    term.traceScreen(log);
+			success = true;
 		}
 		catch (Exception e)
 		{
-		    log.fatal(e.getMessage());
-		    e.printStackTrace();
-		    System.exit(4);
+			reconnect();
+		}
 		}
 		transactionTypeName = "Stock-Level";
 	    }
@@ -211,6 +226,7 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		term.setDistrict(terminalDistrictID);
 		term.setUseStoredProcedures(useStoredProcedures);
 		term.setDBType(dbType);
+		while (!success) {
 		try
 		{
 		    term.generateOrderStatus(log, rnd, 0);
@@ -218,12 +234,12 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		    term.execute(log, db);
 		    parent.resultAppend(term);
 		    term.traceScreen(log);
+			success = true;
 		}
 		catch (Exception e)
 		{
-		    log.fatal(e.getMessage());
-		    e.printStackTrace();
-		    System.exit(4);
+			reconnect();
+		}
 		}
 		transactionTypeName = "Order-Status";
 	    }
@@ -235,6 +251,7 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		term.setDistrict(terminalDistrictID);
 		term.setUseStoredProcedures(useStoredProcedures);
 		term.setDBType(dbType);
+		while (!success) {
 		try
 		{
 		    term.generateDelivery(log, rnd, 0);
@@ -255,12 +272,12 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		    bg.traceScreen(log);
 
 		    skippedDeliveries = bg.getSkippedDeliveries();
+			success = true;
 		}
 		catch (Exception e)
 		{
-		    log.fatal(e.getMessage());
-		    e.printStackTrace();
-		    System.exit(4);
+			reconnect();
+		}
 		}
 		transactionTypeName = "Delivery";
 	    }
@@ -272,6 +289,7 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		term.setDistrict(terminalDistrictID);
 		term.setUseStoredProcedures(useStoredProcedures);
 		term.setDBType(dbType);
+		while (!success) {
 		try
 		{
 		    term.generateNewOrder(log, rnd, 0);
@@ -279,12 +297,12 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 		    term.execute(log, db);
 		    parent.resultAppend(term);
 		    term.traceScreen(log);
+			success = true;
 		}
 		catch (Exception e)
 		{
-		    log.fatal(e.getMessage());
-		    e.printStackTrace();
-		    System.exit(4);
+			reconnect();
+		}
 		}
 		transactionTypeName = "New-Order";
 		newOrderCounter++;
@@ -364,6 +382,17 @@ public class jTPCCTerminal implements jTPCCConfig, Runnable
 	}
     } // end transCommit()
 
-
+    void reconnect() throws InterruptedException {
+        boolean got = false;
+        while (!got)
+            try {
+                conn = DriverManager.getConnection(database, dbProps);
+                conn.setAutoCommit(false);
+                this.db = new jTPCCConnection(conn, dbType);
+                got = true;
+            } catch (SQLException throwables) {
+                Thread.sleep(100);
+            }
+    }
 
 }

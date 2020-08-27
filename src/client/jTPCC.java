@@ -492,14 +492,11 @@ public class jTPCC implements jTPCCConfig
 			usedTerminals[terminalWarehouseID-1][terminalDistrictID-1] = 1;
 
 			String terminalName = "Term-" + (i>=9 ? ""+(i+1) : "0"+(i+1));
-			Connection conn = null;
 			printMessage("Creating database connection for " + terminalName + "...");
-			conn = DriverManager.getConnection(database, dbProps);
-			conn.setAutoCommit(false);
 
 			jTPCCTerminal terminal = new jTPCCTerminal
 			(terminalName, terminalWarehouseID, terminalDistrictID,
-			 conn, dbType,
+			 database, dbProps, dbType,
 			 transactionsPerTerminal, terminalWarehouseFixed,
 			 useStoredProcedures,
 			 paymentWeightValue, orderStatusWeightValue,
